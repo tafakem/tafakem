@@ -10,9 +10,11 @@ import { MatchAnalysisView } from './components/MatchAnalysisView';
 import { ProbabilitiesView } from './components/ProbabilitiesView';
 import { XgView } from './components/XgView';
 import { CornersView } from './components/CornersView';
+import { CombinadasView } from './components/CombinadasView';
 import { TeamsView } from './components/TeamsView';
 import { ImportView } from './components/ImportView';
 import { SettingsView } from './components/SettingsView';
+import { PredictionsAuditView } from './components/PredictionsAuditView';
 import { Match } from './types/football';
 import { INITIAL_MATCHES } from './data/defaultData';
 import { calculateTeamStats } from './utils/analytics';
@@ -143,6 +145,16 @@ export default function App() {
             <CornersView
               homeTeam={homeTeam}
               awayTeam={awayTeam}
+              matches={matches}
+            />
+          )}
+          {activeSection === 'combinadas' && (
+            <CombinadasView
+              matches={matches}
+            />
+          )}
+          {activeSection === 'predicciones' && (
+            <PredictionsAuditView
               matches={matches}
             />
           )}

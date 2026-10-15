@@ -97,6 +97,51 @@ export async function fetchStandings(leagueId: string, season: string = '2025'):
   }
 }
 
+export async function fetchFixtureStatistics(fixtureId: number | string): Promise<{
+  homeCorners?: number;
+  awayCorners?: number;
+  homeXg?: number;
+  awayXg?: number;
+  hasOfficialStats: boolean;
+}> {
+  try {
+    const res = await fetch(`/api/football/fixture-statistics?fixture=${fixtureId}`);
+    if (!res.ok) throw new Error('Error al consultar estadísticas oficiales');
+    const data = await res.json();
+    if (!data.response || !Array.isArray(data.response) || data.response.length < 2) {
+      return { hasOfficialStats: false };
+    }
+
+    const team1 = data.response[0];
+    const team2 = data.response[1];
+
+    const extractStat = (teamObj: any, typeName: string): number | undefined => {
+      const stat = teamObj.statistics?.find(
+        (s: any) => s.type?.toLowerCase() === typeName.toLowerCase()
+      );
+      if (!stat || stat.value === null || stat.value === undefined) return undefined;
+      const parsed = typeof stat.value === 'string' ? parseFloat(stat.value) : Number(stat.value);
+      return isNaN(parsed) ? undefined : parsed;
+    };
+
+    const t1Corners = extractStat(team1, 'Corner Kicks');
+    const t2Corners = extractStat(team2, 'Corner Kicks');
+    const t1Xg = extractStat(team1, 'expected_goals');
+    const t2Xg = extractStat(team2, 'expected_goals');
+
+    return {
+      homeCorners: t1Corners,
+      awayCorners: t2Corners,
+      homeXg: t1Xg,
+      awayXg: t2Xg,
+      hasOfficialStats: t1Corners !== undefined || t1Xg !== undefined
+    };
+  } catch (error) {
+    console.warn('Error fetching fixture statistics:', error);
+    return { hasOfficialStats: false };
+  }
+}
+
 export function convertApiFixtureToMatch(item: ApiFixtureItem): Match {
   const shortStatus = item.fixture.status.short;
   let status: 'live' | 'upcoming' | 'finished' = 'upcoming';
@@ -114,17 +159,25 @@ export function convertApiFixtureToMatch(item: ApiFixtureItem): Match {
     minute: '2-digit'
   });
 
+  // STRICT AUDIT COMPLIANCE:
+  // Never fabricate pseudo-random corners or xG with Math.random().
+  // If official match statistics have not been explicitly fetched or recorded,
+  // leave undefined and mark data_source and flags accordingly.
   return {
     id: `api-fix-${item.fixture.id}`,
+    api_fixture_id: item.fixture.id,
     date: item.fixture.date.substring(0, 10),
     home_team: item.teams.home.name,
     away_team: item.teams.away.name,
     home_score: item.goals.home ?? 0,
     away_score: item.goals.away ?? 0,
-    home_corners: Math.floor(Math.random() * 5) + 3,
-    away_corners: Math.floor(Math.random() * 5) + 3,
-    home_xg: Number((Math.random() * 1.8 + 0.6).toFixed(1)),
-    away_xg: Number((Math.random() * 1.6 + 0.5).toFixed(1)),
+    home_corners: undefined,
+    away_corners: undefined,
+    home_xg: undefined,
+    away_xg: undefined,
+    has_real_corners: false,
+    has_real_xg: false,
+    data_source: 'official_api',
     competition: item.league.name,
     competition_country: item.league.country,
     competition_logo: item.league.logo,
@@ -132,7 +185,7 @@ export function convertApiFixtureToMatch(item: ApiFixtureItem): Match {
     away_logo: item.teams.away.logo,
     status,
     minute: item.fixture.status.elapsed ? `${item.fixture.status.elapsed}'` : item.fixture.status.short,
-    venue: item.fixture.venue.name,
+    venue: item.fixture.venue?.name || 'Estadio Oficial',
     local_time: localTime,
     raw_status: item.fixture.status.long
   } as Match;

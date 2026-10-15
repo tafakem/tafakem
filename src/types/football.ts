@@ -1,5 +1,6 @@
 export interface Match {
   id: string;
+  api_fixture_id?: number;
   date: string;
   home_team: string;
   away_team: string;
@@ -9,11 +10,19 @@ export interface Match {
   away_corners?: number;
   home_xg?: number;
   away_xg?: number;
+  has_real_corners?: boolean;
+  has_real_xg?: boolean;
+  data_source?: 'official_api' | 'imported_csv' | 'sample_demo' | 'manual';
   competition?: string;
+  competition_country?: string;
+  competition_logo?: string;
+  home_logo?: string;
+  away_logo?: string;
   status?: 'live' | 'upcoming' | 'finished';
   minute?: string;
   local_time?: string;
   venue?: string;
+  raw_status?: string;
 }
 
 export interface TeamStats {
@@ -38,8 +47,10 @@ export interface TeamStats {
   away_goals_conceded: number;
   corners_for: number;
   corners_against: number;
+  corners_matches_count: number;
   xg_for: number;
   xg_against: number;
+  xg_matches_count: number;
   form: string[];
 }
 
@@ -76,6 +87,9 @@ export interface MatchProbabilityResult {
     home_or_away: number;
     draw_or_away: number;
   };
+  hasSufficientData?: boolean;
+  sampleSize?: number;
+  dataQuality?: 'insuficiente' | 'moderada' | 'alta';
 }
 
 export interface CornerProbabilityResult {
@@ -85,5 +99,9 @@ export interface CornerProbabilityResult {
   corners_over_85: number;
   corners_over_95: number;
   corners_over_105: number;
-  lines?: { line: number; probability: number; over_prob?: number; under_prob?: number }[];
+  lines: { line: number; probability: number; over_prob: number; under_prob: number }[];
+  hasRealData: boolean;
+  sampleSize: number;
+  dataQuality: 'insuficiente' | 'moderada' | 'alta';
+  auditNotice?: string;
 }

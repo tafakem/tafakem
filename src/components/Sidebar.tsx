@@ -13,7 +13,9 @@ import {
   Radio,
   Calendar,
   Menu,
-  X
+  X,
+  Layers,
+  CheckCircle2
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -41,6 +43,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'probabilidades', label: 'Modelo Poisson', icon: PieChart },
     { id: 'goles', label: 'Goles Esperados (xG)', icon: Target },
     { id: 'corners', label: 'Córners', icon: Flag },
+    { id: 'combinadas', label: 'Combinadas', icon: Layers },
+    { id: 'predicciones', label: 'Predicciones y Auditoría', icon: CheckCircle2 },
     { id: 'equipos', label: 'Equipos y Estadísticas', icon: Shield },
     { id: 'importar', label: 'Importar CSV', icon: UploadCloud },
     { id: 'configuracion', label: 'Configuración', icon: Settings }

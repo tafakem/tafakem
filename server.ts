@@ -87,9 +87,48 @@ async function startServer() {
     }
   });
 
+  // Server-side proxy for API-Football fixture statistics (corners, xG, shots)
+  app.get('/api/football/fixture-statistics', async (req, res) => {
+    const { fixture } = req.query;
+    if (!fixture) {
+      return res.status(400).json({ error: 'El parámetro fixture es requerido' });
+    }
+    const apiKey = 'f1c68cdc4bf167684d6b9c485dc12d2b';
+    const apiUrl = `https://v3.football.api-sports.io/fixtures/statistics?fixture=${fixture}`;
+
+    try {
+      const apiRes = await fetch(apiUrl, {
+        headers: {
+          'x-apisports-key': apiKey,
+          'x-rapidapi-host': 'v3.football.api-sports.io'
+        }
+      });
+
+      if (!apiRes.ok) {
+        const errText = await apiRes.text();
+        return res.status(apiRes.status).json({ error: 'API-Football statistics error', details: errText });
+      }
+
+      const data = await apiRes.json();
+      return res.json(data);
+    } catch (error: any) {
+      console.error('Proxy error fetching API-Football fixture statistics:', error);
+      return res.status(500).json({ error: 'Internal server error fetching fixture statistics', message: error.message });
+    }
+  });
+
   // Create Vite server in middleware mode
   const vite = await createViteServer({
-    server: { middlewareMode: true },
+    server: {
+      middlewareMode: true,
+      allowedHosts: [
+        'tafakem.ai.studio',
+        '.ai.studio',
+        '.run.app',
+        'localhost',
+        '127.0.0.1',
+      ],
+    },
     appType: 'spa',
   });
 

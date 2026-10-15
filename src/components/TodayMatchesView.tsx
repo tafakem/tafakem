@@ -15,7 +15,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { Match } from '../types/football';
-import { fetchFixturesByDate, convertApiFixtureToMatch } from '../utils/footballApi';
+import { fetchFixturesByDate, convertApiFixtureToMatch, fetchFixtureStatistics } from '../utils/footballApi';
 
 interface TodayMatchesViewProps {
   setActiveSection: (section: string) => void;
@@ -41,6 +41,51 @@ export const TodayMatchesView: React.FC<TodayMatchesViewProps> = ({
   const [selectedComp, setSelectedComp] = useState<string>('all');
   const [apiFetchedMatches, setApiFetchedMatches] = useState<Match[]>([]);
   const [expandedComps, setExpandedComps] = useState<{ [comp: string]: boolean }>({});
+  const [loadingStatId, setLoadingStatId] = useState<number | null>(null);
+
+  const handleFetchStats = async (matchItem: Match) => {
+    if (!matchItem.api_fixture_id) return;
+    setLoadingStatId(matchItem.api_fixture_id);
+    try {
+      const stats = await fetchFixtureStatistics(matchItem.api_fixture_id);
+      if (stats.hasOfficialStats) {
+        setMatches(prev => prev.map(m => {
+          if (m.id === matchItem.id || m.api_fixture_id === matchItem.api_fixture_id) {
+            return {
+              ...m,
+              home_corners: stats.homeCorners,
+              away_corners: stats.awayCorners,
+              home_xg: stats.homeXg,
+              away_xg: stats.awayXg,
+              has_real_corners: stats.homeCorners !== undefined,
+              has_real_xg: stats.homeXg !== undefined,
+              data_source: 'official_api'
+            };
+          }
+          return m;
+        }));
+        setApiFetchedMatches(prev => prev.map(m => {
+          if (m.id === matchItem.id || m.api_fixture_id === matchItem.api_fixture_id) {
+            return {
+              ...m,
+              home_corners: stats.homeCorners,
+              away_corners: stats.awayCorners,
+              home_xg: stats.homeXg,
+              away_xg: stats.awayXg,
+              has_real_corners: stats.homeCorners !== undefined,
+              has_real_xg: stats.homeXg !== undefined,
+              data_source: 'official_api'
+            };
+          }
+          return m;
+        }));
+      }
+    } catch (err) {
+      console.warn('Error fetching stats:', err);
+    } finally {
+      setLoadingStatId(null);
+    }
+  };
 
   const loadFixturesForDate = async (dateStr: string) => {
     setLoading(true);
@@ -280,6 +325,45 @@ export const TodayMatchesView: React.FC<TodayMatchesViewProps> = ({
                             </div>
                           )}
                         </div>
+                      </div>
+
+                      {/* Real Stats Badge if available or fetch button */}
+                      <div className="bg-slate-950/70 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+                        {m.home_corners !== undefined ? (
+                          <div className="flex items-center gap-3">
+                            <span className="text-slate-400">
+                              Córners: <strong className="text-indigo-400 font-mono">{m.home_corners} - {m.away_corners}</strong>
+                            </span>
+                            {m.home_xg !== undefined && (
+                              <span className="text-slate-400">
+                                xG: <strong className="text-amber-400 font-mono">{m.home_xg} - {m.away_xg}</strong>
+                              </span>
+                            )}
+                            <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-bold">
+                              OFICIAL
+                            </span>
+                          </div>
+                        ) : m.status !== 'upcoming' && m.api_fixture_id ? (
+                          <div className="flex items-center justify-between w-full">
+                            <span className="text-[11px] text-slate-500">Sin estadísticas de córners/xG cargadas</span>
+                            <button
+                              onClick={() => handleFetchStats(m)}
+                              disabled={loadingStatId === m.api_fixture_id}
+                              className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded-lg border border-slate-700 flex items-center gap-1 transition-all"
+                            >
+                              {loadingStatId === m.api_fixture_id ? (
+                                <>
+                                  <RefreshCw className="w-3 h-3 animate-spin text-emerald-400" />
+                                  Cargando...
+                                </>
+                              ) : (
+                                'Cargar Oficiales'
+                              )}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-500">Métricas avanzadas no disponibles para este fixture</span>
+                        )}
                       </div>
 
                       <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between">

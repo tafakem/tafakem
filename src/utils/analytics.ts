@@ -43,8 +43,10 @@ export function calculateTeamStats(matches: Match[]): TeamStats[] {
         away_goals_conceded: 0,
         corners_for: 0,
         corners_against: 0,
+        corners_matches_count: 0,
         xg_for: 0,
         xg_against: 0,
+        xg_matches_count: 0,
         form: []
       };
     }
@@ -71,18 +73,22 @@ export function calculateTeamStats(matches: Match[]): TeamStats[] {
     away.away_goals_scored += m.away_score;
     away.away_goals_conceded += m.home_score;
 
-    if (m.home_corners !== undefined && m.away_corners !== undefined) {
+    if (m.home_corners !== undefined && m.away_corners !== undefined && !isNaN(m.home_corners) && !isNaN(m.away_corners)) {
       home.corners_for += m.home_corners;
       home.corners_against += m.away_corners;
       away.corners_for += m.away_corners;
       away.corners_against += m.home_corners;
+      home.corners_matches_count = (home.corners_matches_count || 0) + 1;
+      away.corners_matches_count = (away.corners_matches_count || 0) + 1;
     }
 
-    if (m.home_xg !== undefined && m.away_xg !== undefined) {
+    if (m.home_xg !== undefined && m.away_xg !== undefined && !isNaN(m.home_xg) && !isNaN(m.away_xg)) {
       home.xg_for += m.home_xg;
       home.xg_against += m.away_xg;
       away.xg_for += m.away_xg;
       away.xg_against += m.home_xg;
+      home.xg_matches_count = (home.xg_matches_count || 0) + 1;
+      away.xg_matches_count = (away.xg_matches_count || 0) + 1;
     }
 
     if (m.home_score > m.away_score) {
@@ -121,6 +127,19 @@ export function calculateTeamStats(matches: Match[]): TeamStats[] {
   });
 }
 
+// Deterministic helper for fallback team strengths based on name string hash (strictly non-random)
+function getFallbackTeamFactor(teamName: string): { attack: number; defense: number } {
+  let hash = 0;
+  for (let i = 0; i < teamName.length; i++) {
+    hash = (hash << 5) - hash + teamName.charCodeAt(i);
+    hash |= 0;
+  }
+  const positiveHash = Math.abs(hash);
+  const attack = 0.85 + (positiveHash % 41) / 100;
+  const defense = 0.80 + ((positiveHash >> 3) % 41) / 100;
+  return { attack, defense };
+}
+
 // Calculate Match Probabilities with model support ('poisson' | 'dixon-coles' | 'monte-carlo' | 'ai-neural')
 export function calculateMatchProbabilities(
   homeTeam: string,
@@ -141,44 +160,60 @@ export function calculateMatchProbabilities(
   const leagueAvgHomeGoals = totalHomeGoals / totalMatches;
   const leagueAvgAwayGoals = totalAwayGoals / totalMatches;
 
-  const homeStats = stats.find(s => s.name === homeTeam);
-  const awayStats = stats.find(s => s.name === awayTeam);
+  const homeStats = stats.find(s => s.name.toLowerCase() === homeTeam.toLowerCase()) ||
+                    stats.find(s => s.name.toLowerCase().includes(homeTeam.toLowerCase()) || homeTeam.toLowerCase().includes(s.name.toLowerCase()));
+  const awayStats = stats.find(s => s.name.toLowerCase() === awayTeam.toLowerCase()) ||
+                    stats.find(s => s.name.toLowerCase().includes(awayTeam.toLowerCase()) || awayTeam.toLowerCase().includes(s.name.toLowerCase()));
 
-  const directMatch = matches.find(m => m.home_team === homeTeam && m.away_team === awayTeam);
+  const directMatch = matches.find(m => 
+    (m.home_team.toLowerCase() === homeTeam.toLowerCase() && m.away_team.toLowerCase() === awayTeam.toLowerCase()) ||
+    (m.home_team.toLowerCase() === awayTeam.toLowerCase() && m.away_team.toLowerCase() === homeTeam.toLowerCase())
+  );
+
+  const homeMatchesCount = homeStats ? (homeStats.home_matches + homeStats.away_matches) : 0;
+  const awayMatchesCount = awayStats ? (awayStats.home_matches + awayStats.away_matches) : 0;
+  const hasSufficientData = Boolean(homeStats && awayStats && homeMatchesCount >= 3 && awayMatchesCount >= 3);
+  const sampleSize = Math.min(homeMatchesCount, awayMatchesCount);
+  const dataQuality: 'insuficiente' | 'moderada' | 'alta' = hasSufficientData
+    ? (sampleSize >= 8 ? 'alta' : 'moderada')
+    : 'insuficiente';
+
+  const fallbackHome = getFallbackTeamFactor(homeTeam);
+  const fallbackAway = getFallbackTeamFactor(awayTeam);
 
   let homeAttack = homeStats && homeStats.home_matches > 0 
     ? (homeStats.home_goals_scored / homeStats.home_matches) / (leagueAvgHomeGoals || 1)
-    : 1.1;
+    : fallbackHome.attack;
 
   let homeDefense = homeStats && homeStats.home_matches > 0
     ? (homeStats.home_goals_conceded / homeStats.home_matches) / (leagueAvgAwayGoals || 1)
-    : 0.95;
+    : fallbackHome.defense;
 
   let awayAttack = awayStats && awayStats.away_matches > 0
     ? (awayStats.away_goals_scored / awayStats.away_matches) / (leagueAvgAwayGoals || 1)
-    : 1.0;
+    : fallbackAway.attack;
 
   let awayDefense = awayStats && awayStats.away_matches > 0
     ? (awayStats.away_goals_conceded / awayStats.away_matches) / (leagueAvgHomeGoals || 1)
-    : 1.05;
+    : fallbackAway.defense;
 
-  let homeLambda = directMatch?.home_xg !== undefined 
+  let homeLambda = directMatch?.home_xg !== undefined && directMatch.home_team.toLowerCase() === homeTeam.toLowerCase()
     ? directMatch.home_xg 
-    : Math.max(0.3, homeAttack * awayDefense * leagueAvgHomeGoals);
+    : Math.max(0.3, homeAttack * awayDefense * (leagueAvgHomeGoals || 1.35));
 
-  let awayLambda = directMatch?.away_xg !== undefined 
+  let awayLambda = directMatch?.away_xg !== undefined && directMatch.away_team.toLowerCase() === awayTeam.toLowerCase()
     ? directMatch.away_xg 
-    : Math.max(0.3, awayAttack * homeDefense * leagueAvgAwayGoals);
+    : Math.max(0.3, awayAttack * homeDefense * (leagueAvgAwayGoals || 1.10));
 
   if (modelType === 'dixon-coles') {
     homeLambda *= 1.02;
     awayLambda *= 0.98;
   } else if (modelType === 'monte-carlo') {
-    homeLambda *= 1.05;
-    awayLambda *= 1.04;
+    homeLambda *= 1.02;
+    awayLambda *= 1.02;
   } else if (modelType === 'ai-neural') {
-    homeLambda *= (1 + (homeTeam.length % 5) * 0.04);
-    awayLambda *= (1 + (awayTeam.length % 4) * 0.04);
+    homeLambda *= 1.0;
+    awayLambda *= 1.0;
   }
 
   let homeWinProb = 0;
@@ -186,6 +221,7 @@ export function calculateMatchProbabilities(
   let awayWinProb = 0;
 
   const exactScores: { home: number; away: number; prob: number }[] = [];
+  let ou05_under = 0;
   let ou15_under = 0;
   let ou25_under = 0;
   let ou35_under = 0;
@@ -209,6 +245,7 @@ export function calculateMatchProbabilities(
       else if (h === a) drawProb += pScore;
       else awayWinProb += pScore;
 
+      if (h + a === 0) ou05_under += pScore;
       if (h + a <= 1) ou15_under += pScore;
       if (h + a <= 2) ou25_under += pScore;
       if (h + a <= 3) ou35_under += pScore;
@@ -235,8 +272,8 @@ export function calculateMatchProbabilities(
     correct_scores: formattedScores,
     exact_scores: formattedScores,
     over_under: {
-      over_05: Number(((1 - ou15_under * 1.5) * 100).toFixed(1)),
-      under_05: Number((ou15_under * 1.5 * 100).toFixed(1)),
+      over_05: Number(((1 - ou05_under) * 100).toFixed(1)),
+      under_05: Number((ou05_under * 100).toFixed(1)),
       over_15: Number(((1 - ou15_under) * 100).toFixed(1)),
       under_15: Number((ou15_under * 100).toFixed(1)),
       over_25: Number(((1 - ou25_under) * 100).toFixed(1)),
@@ -253,11 +290,19 @@ export function calculateMatchProbabilities(
     btts: {
       yes: Number(((1 - btts_no) * 100).toFixed(1)),
       no: Number((btts_no * 100).toFixed(1))
-    }
+    },
+    double_chance: {
+      home_or_draw: Number((homeWinProb + drawProb).toFixed(1)),
+      home_or_away: Number((homeWinProb + awayWinProb).toFixed(1)),
+      draw_or_away: Number((drawProb + awayWinProb).toFixed(1))
+    },
+    hasSufficientData,
+    sampleSize,
+    dataQuality
   };
 }
 
-// Calculate Corner Probabilities
+// Calculate Corner Probabilities with strict sample validation and mathematical Poisson
 export function calculateCornerProbprobabilities(
   homeTeam: string,
   awayTeam: string,
@@ -267,51 +312,82 @@ export function calculateCornerProbprobabilities(
   const homeStats = stats.find(s => s.name === homeTeam);
   const awayStats = stats.find(s => s.name === awayTeam);
 
-  let avgHomeCornersFor = 5.2;
-  let avgHomeCornersAgainst = 4.3;
-  let avgAwayCornersFor = 4.8;
-  let avgAwayCornersAgainst = 5.1;
+  const homeCornerMatches = homeStats?.corners_matches_count || 0;
+  const awayCornerMatches = awayStats?.corners_matches_count || 0;
+  const sampleSize = Math.min(homeCornerMatches, awayCornerMatches);
+  const hasRealData = homeCornerMatches > 0 && awayCornerMatches > 0;
+  const dataQuality: 'insuficiente' | 'moderada' | 'alta' = !hasRealData 
+    ? 'insuficiente' 
+    : (sampleSize >= 5 ? 'alta' : 'moderada');
 
-  if (homeStats && homeStats.matches_played > 0) {
-    avgHomeCornersFor = homeStats.corners_for / homeStats.matches_played;
-    avgHomeCornersAgainst = homeStats.corners_against / homeStats.matches_played;
+  // If no corner data recorded, do not invent dummy averages (e.g. 5.2)
+  if (!hasRealData || !homeStats || !awayStats) {
+    const emptyLines = [7.5, 8.5, 9.5, 10.5, 11.5].map(line => ({
+      line,
+      probability: 0,
+      over_prob: 0,
+      under_prob: 0
+    }));
+
+    return {
+      home_expected_corners: 0,
+      away_expected_corners: 0,
+      total_expected_corners: 0,
+      corners_over_85: 0,
+      corners_over_95: 0,
+      corners_over_105: 0,
+      lines: emptyLines,
+      hasRealData: false,
+      sampleSize: 0,
+      dataQuality: 'insuficiente',
+      auditNotice: 'Sin registros oficiales de córners para estos equipos en la base de datos actual.'
+    };
   }
 
-  if (awayStats && awayStats.matches_played > 0) {
-    avgAwayCornersFor = awayStats.corners_for / awayStats.matches_played;
-    avgAwayCornersAgainst = awayStats.corners_against / awayStats.matches_played;
-  }
+  // Calculate averages strictly from matches where corners were logged
+  const avgHomeCornersFor = homeStats.corners_for / homeCornerMatches;
+  const avgHomeCornersAgainst = homeStats.corners_against / homeCornerMatches;
+  const avgAwayCornersFor = awayStats.corners_for / awayCornerMatches;
+  const avgAwayCornersAgainst = awayStats.corners_against / awayCornerMatches;
 
   const homeExpCorners = (avgHomeCornersFor + avgAwayCornersAgainst) / 2;
   const awayExpCorners = (avgAwayCornersFor + avgHomeCornersAgainst) / 2;
   const totalExpCorners = homeExpCorners + awayExpCorners;
 
-  const lines = [8.5, 9.5, 10.5, 11.5];
+  // Real Poisson calculations for lines 7.5 to 11.5
+  const lines = [7.5, 8.5, 9.5, 10.5, 11.5];
   const cornerLinesResult = lines.map(line => {
     let underProb = 0;
-    for (let c = 0; c <= Math.floor(line); c++) {
-      const p = poissonProbability(totalExpCorners, c);
-      if (c <= line) {
-        underProb += p;
-      }
+    const maxK = Math.floor(line);
+    for (let c = 0; c <= maxK; c++) {
+      underProb += poissonProbability(totalExpCorners, c);
     }
-    const under = Math.min(99, Math.max(1, underProb * 100));
-    const over = 100 - under;
+    const under = Math.min(99.9, Math.max(0.1, underProb * 100));
+    const over = Number((100 - under).toFixed(1));
+    const underFixed = Number(under.toFixed(1));
     return {
       line,
-      probability: Number(over.toFixed(1)),
-      over_prob: Number(over.toFixed(1)),
-      under_prob: Number(under.toFixed(1))
+      probability: over,
+      over_prob: over,
+      under_prob: underFixed
     };
   });
+
+  const getLineOverProb = (l: number): number => {
+    const found = cornerLinesResult.find(r => r.line === l);
+    return found ? found.over_prob : 0;
+  };
 
   return {
     home_expected_corners: Number(homeExpCorners.toFixed(1)),
     away_expected_corners: Number(awayExpCorners.toFixed(1)),
     total_expected_corners: Number(totalExpCorners.toFixed(1)),
-    corners_over_85: 65.0,
-    corners_over_95: 50.0,
-    corners_over_105: 35.0,
-    lines: cornerLinesResult
+    corners_over_85: getLineOverProb(8.5),
+    corners_over_95: getLineOverProb(9.5),
+    corners_over_105: getLineOverProb(10.5),
+    lines: cornerLinesResult,
+    hasRealData: true,
+    sampleSize,
+    dataQuality
   };
 }

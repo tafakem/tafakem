@@ -34,22 +34,30 @@ export const ImportView: React.FC<ImportViewProps> = ({ matches, setMatches }) =
           return;
         }
 
-        const newMatches: Match[] = parsedData.map((row, idx) => ({
-          id: `csv-${Date.now()}-${idx}`,
-          date: row.date || new Date().toISOString().split('T')[0],
-          home_team: row.home_team || 'Local',
-          away_team: row.away_team || 'Visitante',
-          home_score: Number(row.home_score) || 0,
-          away_score: Number(row.away_score) || 0,
-          home_corners: row.home_corners ? Number(row.home_corners) : Math.floor(Math.random() * 6) + 3,
-          away_corners: row.away_corners ? Number(row.away_corners) : Math.floor(Math.random() * 6) + 2,
-          home_xg: row.home_xg ? Number(row.home_xg) : Number((Math.random() * 2 + 0.5).toFixed(1)),
-          away_xg: row.away_xg ? Number(row.away_xg) : Number((Math.random() * 2 + 0.4).toFixed(1)),
-          competition: row.competition || 'Competición Personalizada',
-          status: 'finished',
-          minute: 'Finalizado',
-          venue: 'Estadio Principal'
-        }));
+        const newMatches: Match[] = parsedData.map((row, idx) => {
+          const hasCorners = row.home_corners !== undefined && row.home_corners !== '' && !isNaN(Number(row.home_corners));
+          const hasXg = row.home_xg !== undefined && row.home_xg !== '' && !isNaN(Number(row.home_xg));
+
+          return {
+            id: `csv-${Date.now()}-${idx}`,
+            date: row.date || new Date().toISOString().split('T')[0],
+            home_team: row.home_team || 'Local',
+            away_team: row.away_team || 'Visitante',
+            home_score: Number(row.home_score) || 0,
+            away_score: Number(row.away_score) || 0,
+            home_corners: hasCorners ? Number(row.home_corners) : undefined,
+            away_corners: hasCorners ? Number(row.away_corners) : undefined,
+            home_xg: hasXg ? Number(row.home_xg) : undefined,
+            away_xg: hasXg ? Number(row.away_xg) : undefined,
+            has_real_corners: hasCorners,
+            has_real_xg: hasXg,
+            data_source: 'imported_csv',
+            competition: row.competition || 'Competición Personalizada',
+            status: 'finished',
+            minute: 'Finalizado',
+            venue: 'Estadio Principal'
+          };
+        });
 
         setMatches((prev: Match[]) => [...newMatches, ...prev]);
         setImportStatus({
@@ -81,10 +89,13 @@ export const ImportView: React.FC<ImportViewProps> = ({ matches, setMatches }) =
             away_team: m.away_team.away_team_name,
             home_score: m.home_score ?? 0,
             away_score: m.away_score ?? 0,
-            home_corners: Math.floor(Math.random() * 5) + 3,
-            away_corners: Math.floor(Math.random() * 5) + 3,
-            home_xg: Number((Math.random() * 2 + 0.8).toFixed(1)),
-            away_xg: Number((Math.random() * 2 + 0.7).toFixed(1)),
+            home_corners: undefined,
+            away_corners: undefined,
+            home_xg: undefined,
+            away_xg: undefined,
+            has_real_corners: false,
+            has_real_xg: false,
+            data_source: 'sample_demo',
             competition: `${m.competition.competition_name} (${m.season.season_name}) - StatsBomb`,
             status: 'finished',
             minute: 'Finalizado',

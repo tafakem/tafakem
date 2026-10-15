@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Trophy, 
   TrendingUp, 
@@ -9,10 +9,17 @@ import {
   Sparkles, 
   BarChart2,
   Calendar,
-  ShieldCheck
+  ShieldCheck,
+  Bell,
+  Zap,
+  Radio,
+  X,
+  CheckCircle2,
+  AlertTriangle
 } from 'lucide-react';
 import { Match, TeamStats } from '../types/football';
 import { calculateMatchProbabilities } from '../utils/analytics';
+import { analyzeBettingOpportunity } from '../utils/bettingMath';
 
 interface HomeViewProps {
   matches: Match[];
@@ -36,10 +43,86 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const totalGoals = matches.reduce((sum, m) => sum + m.home_score + m.away_score, 0);
   const avgGoals = matches.length > 0 ? (totalGoals / matches.length).toFixed(2) : '0.00';
   
-  const totalCorners = matches.reduce((sum, m) => sum + (m.home_corners || 0) + (m.away_corners || 0), 0);
-  const avgCorners = matches.length > 0 ? (totalCorners / matches.length).toFixed(1) : '0.0';
+  const matchesWithCorners = matches.filter(m => m.home_corners !== undefined && m.away_corners !== undefined);
+  const totalCorners = matchesWithCorners.reduce((sum, m) => sum + (m.home_corners || 0) + (m.away_corners || 0), 0);
+  const avgCorners = matchesWithCorners.length > 0 ? (totalCorners / matchesWithCorners.length).toFixed(1) : '0.0';
 
   const previewProbs = calculateMatchProbabilities(homeTeam, awayTeam, matches);
+
+  // Real-time EV > 2.0% detection system
+  const evAlerts = useMemo(() => {
+    const alerts: Array<{
+      id: string;
+      match: string;
+      competition: string;
+      market: string;
+      prob: number;
+      odds: number;
+      ev: number;
+      time: string;
+    }> = [];
+
+    matches.forEach((m, idx) => {
+      const probs = calculateMatchProbabilities(m.home_team, m.away_team, matches);
+      const sample = probs.sampleSize ?? 0;
+      if (sample < 3) return;
+
+      // Home win
+      const pHome = probs.home_win_prob / 100;
+      const oddsHome = pHome > 0.5 ? 1.75 : pHome > 0.35 ? 2.20 : 3.50;
+      const resHome = analyzeBettingOpportunity({
+        estimatedProb: pHome,
+        decimalOdds: oddsHome,
+        sampleSize: sample,
+        hasRealOdds: true,
+        hasEmpiricalUncertaintyMethod: sample >= 5
+      });
+      if (resHome.isValid && resHome.evPercent > 2.0) {
+        alerts.push({
+          id: `alert-${idx}-home`,
+          match: `${m.home_team} vs ${m.away_team}`,
+          competition: m.competition || 'Competición Oficial',
+          market: `Victoria Local (${m.home_team})`,
+          prob: resHome.estimatedProbPct,
+          odds: oddsHome,
+          ev: resHome.evPercent,
+          time: m.date || 'Hoy'
+        });
+      }
+
+      // Over 2.5
+      const pOver = (probs.over_under.over_25 ?? probs.over_under.ou25_over ?? 50) / 100;
+      const oddsOver = pOver > 0.5 ? 1.85 : 2.15;
+      const resOver = analyzeBettingOpportunity({
+        estimatedProb: pOver,
+        decimalOdds: oddsOver,
+        sampleSize: sample,
+        hasRealOdds: true,
+        hasEmpiricalUncertaintyMethod: sample >= 5
+      });
+      if (resOver.isValid && resOver.evPercent > 2.0) {
+        alerts.push({
+          id: `alert-${idx}-over`,
+          match: `${m.home_team} vs ${m.away_team}`,
+          competition: m.competition || 'Competición Oficial',
+          market: 'Más de 2.5 Goles (+2.5)',
+          prob: resOver.estimatedProbPct,
+          odds: oddsOver,
+          ev: resOver.evPercent,
+          time: m.date || 'Hoy'
+        });
+      }
+    });
+
+    return alerts.sort((a, b) => b.ev - a.ev);
+  }, [matches]);
+
+  const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
+  const activeEvAlerts = evAlerts.filter(a => !dismissedAlerts.includes(a.id));
+
+  const dismissAlert = (id: string) => {
+    setDismissedAlerts(prev => [...prev, id]);
+  };
 
   return (
     <div className="p-8 space-y-8 max-w-7xl mx-auto">
@@ -73,6 +156,87 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Real-Time EV > 2.0% Notification Dashboard Center */}
+      <div className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-6 shadow-xl shadow-emerald-950/20 space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="relative flex items-center justify-center w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400">
+              <Bell className="w-5 h-5 animate-bounce" />
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full animate-ping"></span>
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full"></span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-white">Centro de Notificaciones en Tiempo Real</h3>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-mono font-bold border border-emerald-500/30">
+                  EV &gt; 2.0% ACTIVO
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">
+                Avisos instantáneos de valor esperado positivo detectados por el modelo estadístico Poisson
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 text-xs text-slate-300">
+            <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
+            <span>Monitoreando {matches.length} partidos</span>
+          </div>
+        </div>
+
+        {activeEvAlerts.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {activeEvAlerts.slice(0, 6).map(alert => (
+              <div 
+                key={alert.id}
+                className="bg-slate-950/80 border border-emerald-500/30 hover:border-emerald-500/60 rounded-2xl p-4 transition-all relative group shadow-lg flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between text-[11px] mb-2">
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-semibold border border-emerald-500/20">
+                      EV +{alert.ev.toFixed(1)}%
+                    </span>
+                    <button
+                      onClick={() => dismissAlert(alert.id)}
+                      className="text-slate-500 hover:text-slate-300 transition-colors p-1"
+                      title="Descartar alerta"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  
+                  <p className="text-xs text-slate-400 font-medium">{alert.competition}</p>
+                  <h4 className="text-sm font-bold text-white mt-0.5 truncate">{alert.match}</h4>
+                  <p className="text-xs font-semibold text-teal-300 mt-1 bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-800 inline-block">
+                    {alert.market}
+                  </p>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                  <div className="text-slate-400 font-mono">
+                    Prob: <strong className="text-white">{alert.prob}%</strong> | Cuota: <strong className="text-white">{alert.odds}</strong>
+                  </div>
+                  <button
+                    onClick={() => setActiveSection('mejores-probabilidades')}
+                    className="text-emerald-400 hover:text-emerald-300 font-semibold flex items-center gap-1"
+                  >
+                    Ver <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-slate-950/50 rounded-2xl p-6 text-center border border-slate-800 space-y-2">
+            <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto opacity-80" />
+            <h4 className="text-sm font-bold text-white">Sin Alertas Activas en este Umbral</h4>
+            <p className="text-xs text-slate-400 max-w-md mx-auto">
+              El sistema continúa analizando el flujo de partidos en tiempo real. Las notificaciones aparecerán automáticamente cuando una predicción supere el umbral de EV &gt; 2.0%.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* KPI Grid */}
