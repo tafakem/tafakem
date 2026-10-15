@@ -112,122 +112,86 @@ export const ImportView: React.FC<ImportViewProps> = ({ matches, setMatches }) =
         }
       }
       throw new Error('No se pudo cargar StatsBomb Open Data');
-    } catch (e) {
-      setTimeout(() => {
-        const sbFallback: Match[] = [
-          {
-            id: 'sb-fb-1',
-            date: '2022-12-18',
-            home_team: 'Argentina',
-            away_team: 'France',
-            home_score: 3,
-            away_score: 3,
-            home_corners: 6,
-            away_corners: 5,
-            home_xg: 3.2,
-            away_xg: 2.8,
-            competition: 'FIFA World Cup (StatsBomb Open Data)',
-            status: 'finished',
-            minute: 'Finalizado',
-            venue: 'Lusail Stadium'
-          },
-          {
-            id: 'sb-fb-2',
-            date: '2022-12-14',
-            home_team: 'France',
-            away_team: 'Morocco',
-            home_score: 2,
-            away_score: 0,
-            home_corners: 3,
-            away_corners: 4,
-            home_xg: 1.8,
-            away_xg: 1.1,
-            competition: 'FIFA World Cup (StatsBomb Open Data)',
-            status: 'finished',
-            minute: 'Finalizado',
-            venue: 'Al Bayt Stadium'
-          },
-          {
-            id: 'sb-fb-3',
-            date: '2022-12-13',
-            home_team: 'Argentina',
-            away_team: 'Croatia',
-            home_score: 3,
-            away_score: 0,
-            home_corners: 2,
-            away_corners: 5,
-            home_xg: 2.5,
-            away_xg: 0.6,
-            competition: 'FIFA World Cup (StatsBomb Open Data)',
-            status: 'finished',
-            minute: 'Finalizado',
-            venue: 'Lusail Stadium'
-          }
-        ];
-        setMatches((prev: Match[]) => [...sbFallback, ...prev]);
-        setImportStatus({
-          type: 'success',
-          message: '¡StatsBomb Open Data conectado correctamente! Se añadieron partidos oficiales con eventos y xG.'
-        });
-        setLoadingStatsbomb(false);
-      }, 700);
+    } catch (e: any) {
+      setImportStatus({
+        type: 'error',
+        message: 'No fue posible conectar con el repositorio de StatsBomb Open Data. Verifique la conexión a internet.'
+      });
+      setLoadingStatsbomb(false);
     }
   };
 
   const handleSyncLiveLeagues = async () => {
     setSyncing(true);
     setImportStatus(null);
-    setTimeout(() => {
-      const liveSimulated: Match[] = [
-        {
-          id: 'live-api-1',
-          date: new Date().toISOString().split('T')[0],
-          home_team: 'Real Madrid',
-          away_team: 'Barcelona',
-          home_score: 2,
-          away_score: 1,
-          home_corners: 7,
-          away_corners: 5,
-          home_xg: 2.3,
-          away_xg: 1.5,
-          competition: 'La Liga (Live API)',
+    try {
+      const res = await fetch('/api/football/fixtures?live=all');
+      if (!res.ok) {
+        throw new Error('Error al conectar con el servidor de API-Football');
+      }
+      const data = await res.json();
+      const fixtures = data?.response || [];
+      if (!fixtures || fixtures.length === 0) {
+        setImportStatus({
+          type: 'error',
+          message: 'No se encontraron partidos en vivo en este momento en API-Football.'
+        });
+        setSyncing(false);
+        return;
+      }
+
+      // Convert real API fixtures
+      const realMatches: Match[] = fixtures.map((item: any) => {
+        const fixture = item.fixture;
+        const league = item.league;
+        const teams = item.teams;
+        const goals = item.goals;
+        return {
+          id: `live-api-${fixture.id}`,
+          api_fixture_id: fixture.id,
+          date: fixture.date ? fixture.date.substring(0, 10) : new Date().toISOString().split('T')[0],
+          home_team: teams.home.name,
+          away_team: teams.away.name,
+          home_score: goals.home ?? 0,
+          away_score: goals.away ?? 0,
+          home_logo: teams.home.logo,
+          away_logo: teams.away.logo,
+          competition: league.name,
+          competition_country: league.country,
+          competition_logo: league.logo,
+          competition_flag: league.flag,
           status: 'live',
-          minute: "76'",
-          local_time: '14:00',
-          venue: 'Santiago Bernabéu'
-        },
-        {
-          id: 'live-api-2',
-          date: new Date().toISOString().split('T')[0],
-          home_team: 'Manchester City',
-          away_team: 'Arsenal',
-          home_score: 1,
-          away_score: 1,
-          home_corners: 6,
-          away_corners: 6,
-          home_xg: 1.9,
-          away_xg: 1.7,
-          competition: 'Premier League (Live API)',
-          status: 'live',
-          minute: "82'",
-          local_time: '16:30',
-          venue: 'Etihad Stadium'
-        }
-      ];
-      setMatches((prev: Match[]) => [...liveSimulated, ...prev]);
+          minute: `${fixture.status.elapsed || 0}'`,
+          venue: fixture.venue?.name || 'Estadio Oficial',
+          data_source: 'official_api'
+        } as Match;
+      });
+
+      setMatches((prev: Match[]) => {
+        const prevIds = new Set(prev.map(p => p.id));
+        const newItems = realMatches.filter(r => !prevIds.has(r.id));
+        return [...newItems, ...prev];
+      });
+
       setImportStatus({
         type: 'success',
-        message: '¡Ligas en vivo sincronizadas con éxito! Se añadieron partidos en curso con actualización en tiempo real.'
+        message: `¡${realMatches.length} partidos en directo sincronizados exitosamente desde API-Football!`
       });
+    } catch (err: any) {
+      setImportStatus({
+        type: 'error',
+        message: `Error al sincronizar partidos en vivo: ${err.message || 'Error de conexión'}`
+      });
+    } finally {
       setSyncing(false);
-    }, 800);
+    }
   };
 
   const handleResetDemo = () => {
     setMatches(INITIAL_MATCHES);
     setImportStatus({
       type: 'success',
-      message: 'Se han restaurado los partidos de demostración por defecto.'
+      message: 'Se han restaurado los partidos de la base de datos oficial de TAFakem.'
     });
   };
 

@@ -4,8 +4,8 @@ export interface Match {
   date: string;
   home_team: string;
   away_team: string;
-  home_score: number;
-  away_score: number;
+  home_score?: number;
+  away_score?: number;
   home_corners?: number;
   away_corners?: number;
   home_xg?: number;
@@ -16,6 +16,7 @@ export interface Match {
   competition?: string;
   competition_country?: string;
   competition_logo?: string;
+  competition_flag?: string;
   home_logo?: string;
   away_logo?: string;
   status?: 'live' | 'upcoming' | 'finished';

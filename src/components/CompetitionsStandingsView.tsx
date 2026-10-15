@@ -4,14 +4,15 @@ import { fetchStandings, StandingRow } from '../utils/footballApi';
 
 export const CompetitionsStandingsView: React.FC = () => {
   const competitionsList = [
-    { id: '39', name: 'Premier League', country: 'Inglaterra' },
-    { id: '140', name: 'La Liga', country: 'España' },
-    { id: '135', name: 'Serie A', country: 'Italia' },
-    { id: '78', name: 'Bundesliga', country: 'Alemania' },
-    { id: '61', name: 'Ligue 1', country: 'Francia' },
-    { id: '282', name: 'Liga 1 de Perú', country: 'Perú' },
-    { id: '2', name: 'UEFA Champions League', country: 'Europa' },
-    { id: '3', name: 'UEFA Europa League', country: 'Europa' }
+    { id: '39', name: 'Premier League', country: 'Inglaterra', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿', logo: 'https://media.api-sports.io/football/leagues/39.png' },
+    { id: '140', name: 'La Liga', country: 'España', flag: '🇪🇸', logo: 'https://media.api-sports.io/football/leagues/140.png' },
+    { id: '135', name: 'Serie A (Italia)', country: 'Italia', flag: '🇮🇹', logo: 'https://media.api-sports.io/football/leagues/135.png' },
+    { id: '71', name: 'Brasileirão Serie A', country: 'Brasil', flag: '🇧🇷', logo: 'https://media.api-sports.io/football/leagues/71.png' },
+    { id: '78', name: 'Bundesliga', country: 'Alemania', flag: '🇩🇪', logo: 'https://media.api-sports.io/football/leagues/78.png' },
+    { id: '61', name: 'Ligue 1', country: 'Francia', flag: '🇫🇷', logo: 'https://media.api-sports.io/football/leagues/61.png' },
+    { id: '281', name: 'Liga 1 de Perú', country: 'Perú', flag: '🇵🇪', logo: 'https://media.api-sports.io/football/leagues/281.png' },
+    { id: '2', name: 'UEFA Champions League', country: 'Europa', flag: '🏆', logo: 'https://media.api-sports.io/football/leagues/2.png' },
+    { id: '13', name: 'Copa Libertadores', country: 'Sudamérica', flag: '🌎', logo: 'https://media.api-sports.io/football/leagues/13.png' }
   ];
 
   const [selectedComp, setSelectedComp] = useState(competitionsList[0].id);
@@ -58,29 +59,36 @@ export const CompetitionsStandingsView: React.FC = () => {
             Tablas de Posiciones de Ligas Top
           </h2>
           <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-2xl">
-            Consulta la clasificación actualizada de la Premier League, LaLiga, Serie A, Bundesliga, Liga 1 de Perú y torneos UEFA.
+            Clasificaciones actualizadas con escudos oficiales, diferenciando con precisión la Serie A de Italia 🇮🇹 y el Brasileirão Serie A de Brasil 🇧🇷.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <select
-            value={selectedComp}
-            onChange={(e) => setSelectedComp(e.target.value)}
-            className="bg-slate-950 text-white text-xs font-semibold px-4 py-3 rounded-xl border border-slate-700 focus:outline-none focus:border-emerald-500"
-          >
-            {competitionsList.map(comp => (
-              <option key={comp.id} value={comp.id}>{comp.name} ({comp.country})</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-700">
+            {activeCompInfo?.logo && (
+              <img src={activeCompInfo.logo} alt="" className="w-6 h-6 object-contain rounded bg-white/5 p-0.5 ml-2" />
+            )}
+            <select
+              value={selectedComp}
+              onChange={(e) => setSelectedComp(e.target.value)}
+              className="bg-transparent text-white text-xs font-semibold px-2 py-1.5 focus:outline-none cursor-pointer"
+            >
+              {competitionsList.map(comp => (
+                <option key={comp.id} value={comp.id} className="bg-slate-900 text-white">
+                  {comp.flag} {comp.name} ({comp.country})
+                </option>
+              ))}
+            </select>
+          </div>
 
           <select
             value={selectedSeason}
             onChange={(e) => setSelectedSeason(e.target.value)}
-            className="bg-slate-950 text-white text-xs font-semibold px-4 py-3 rounded-xl border border-slate-700 focus:outline-none focus:border-emerald-500"
+            className="bg-slate-950 text-white text-xs font-semibold px-4 py-3 rounded-xl border border-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer"
           >
-            <option value="2025">Temporada 2025/2026</option>
-            <option value="2026">Temporada 2026</option>
-            <option value="2024">Temporada 2024/2025</option>
+            <option value="2025" className="bg-slate-900">Temporada 2025/2026</option>
+            <option value="2026" className="bg-slate-900">Temporada 2026</option>
+            <option value="2024" className="bg-slate-900">Temporada 2024/2025</option>
           </select>
         </div>
       </div>
@@ -104,10 +112,17 @@ export const CompetitionsStandingsView: React.FC = () => {
           {standingsGroups.map((group, groupIdx) => (
             <div key={groupIdx} className="bg-slate-900 border border-slate-800 rounded-3xl shadow-xl overflow-hidden">
               <div className="bg-slate-950 px-6 py-4 border-b border-slate-800 flex items-center justify-between">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Trophy className="w-4 h-4 text-emerald-400" />
-                  {activeCompInfo?.name} &bull; {activeCompInfo?.country} {group[0]?.group ? `(${group[0].group})` : ''}
-                </h3>
+                <div className="flex items-center gap-3">
+                  {activeCompInfo?.logo && (
+                    <img src={activeCompInfo.logo} alt="" className="w-7 h-7 object-contain rounded bg-white/5 p-0.5" />
+                  )}
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span>{activeCompInfo?.flag}</span>
+                    <span>{activeCompInfo?.name}</span>
+                    <span className="text-slate-400 text-xs">({activeCompInfo?.country})</span>
+                    {group[0]?.group ? <span className="text-emerald-400 font-mono text-xs ml-2">[{group[0].group}]</span> : null}
+                  </h3>
+                </div>
                 <span className="text-xs font-mono text-slate-400">Temporada {selectedSeason}</span>
               </div>
 

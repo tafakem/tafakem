@@ -33,15 +33,15 @@ export const PredictionsAuditView: React.FC<PredictionsAuditViewProps> = ({ matc
       favoredProb = probs.away_win_prob;
     }
 
-    // Check if match is finished
-    const isFinished = m.status === 'finished' || (m.home_score !== undefined && m.away_score !== undefined && m.status !== 'upcoming');
+    // Check if match is truly finished with real scores recorded
+    const isFinished = m.status === 'finished' && m.home_score !== undefined && m.away_score !== undefined;
     
     let auditResult: 'correct' | 'incorrect' | 'pending' = 'pending';
-    let auditExplanation = 'Partido pendiente de disputarse o sin marcador final registrado.';
+    let auditExplanation = 'Partido programado pendiente de disputarse. Pronóstico activo: se auditará con el marcador oficial tras el pitido final.';
 
     if (isFinished) {
-      const actualHome = m.home_score ?? 0;
-      const actualAway = m.away_score ?? 0;
+      const actualHome = m.home_score!;
+      const actualAway = m.away_score!;
       
       let actualOutcome = 'X';
       if (actualHome > actualAway) actualOutcome = '1';
@@ -53,11 +53,18 @@ export const PredictionsAuditView: React.FC<PredictionsAuditViewProps> = ({ matc
 
       if (predictedOutcomeCode === actualOutcome) {
         auditResult = 'correct';
-        auditExplanation = `¡Acierto! El modelo predijo ${favored} (${favoredProb}%) y el resultado real fue ${actualHome}-${actualAway} (${actualOutcome}).`;
+        auditExplanation = `¡Acierto! El modelo predijo ${favored} (${favoredProb}%) y el resultado real fue ${actualHome}-${actualAway} (${actualOutcome === '1' ? 'Local' : actualOutcome === '2' ? 'Visitante' : 'Empate'}).`;
       } else {
         auditResult = 'incorrect';
-        auditExplanation = `Fallo en pronóstico. El modelo favorecía a ${favored} (${favoredProb}%), pero el resultado real fue ${actualHome}-${actualAway} (${actualOutcome === '1' ? 'Local' : actualOutcome === '2' ? 'Visitante' : 'Empate'}). El rendimiento en campo divergió de la expectativa estadística.`;
+        auditExplanation = `Fallo en pronóstico. El modelo favorecía a ${favored} (${favoredProb}%), pero el resultado real fue ${actualHome}-${actualAway} (${actualOutcome === '1' ? 'Local' : actualOutcome === '2' ? 'Visitante' : 'Empate'}). Divergencia con la expectativa matemática.`;
       }
+    }
+
+    // Determine highest probability exact score from Poisson distribution
+    let topScoreStr = `${Math.max(1, Math.round(probs.home_lambda))}-${Math.max(0, Math.round(probs.away_lambda))}`;
+    if (probs.correct_scores && probs.correct_scores.length > 0) {
+      const topScore = [...probs.correct_scores].sort((a, b) => b.prob - a.prob)[0];
+      if (topScore) topScoreStr = `${topScore.home}-${topScore.away} (${topScore.prob}%)`;
     }
 
     return {
@@ -65,7 +72,7 @@ export const PredictionsAuditView: React.FC<PredictionsAuditViewProps> = ({ matc
       probs,
       favored,
       favoredProb,
-      predictedScore: `${predictedHomeGoals}-${predictedAwayGoals}`,
+      predictedScore: topScoreStr,
       isFinished,
       auditResult,
       auditExplanation
@@ -73,11 +80,22 @@ export const PredictionsAuditView: React.FC<PredictionsAuditViewProps> = ({ matc
   });
 
   // Filter audit items
+  const q = searchTerm.toLowerCase().trim();
+  const isSearchPending = q === 'pendiente' || q === 'pendientes' || q === 'proximo' || q === 'proximos';
+  const isSearchCorrect = q === 'acierto' || q === 'aciertos' || q === 'acertado' || q === 'acertados';
+  const isSearchIncorrect = q === 'fallo' || q === 'fallos' || q === 'fallado' || q === 'fallados';
+
   const filteredItems = auditData.filter(item => {
     const matchesComp = selectedCompetition === 'all' || item.match.competition === selectedCompetition;
-    const matchesSearch = item.match.home_team.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          item.match.away_team.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          (item.match.competition && item.match.competition.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    const matchesSearch = !q ||
+      (isSearchPending && item.auditResult === 'pending') ||
+      (isSearchCorrect && item.auditResult === 'correct') ||
+      (isSearchIncorrect && item.auditResult === 'incorrect') ||
+      item.match.home_team.toLowerCase().includes(q) ||
+      item.match.away_team.toLowerCase().includes(q) ||
+      (item.match.competition && item.match.competition.toLowerCase().includes(q)) ||
+      (item.match.competition_country && item.match.competition_country.toLowerCase().includes(q));
     
     const matchesStatus = filterStatus === 'all' || 
                           (filterStatus === 'correct' && item.auditResult === 'correct') ||
@@ -91,6 +109,7 @@ export const PredictionsAuditView: React.FC<PredictionsAuditViewProps> = ({ matc
   const finishedItems = auditData.filter(i => i.isFinished);
   const correctItems = finishedItems.filter(i => i.auditResult === 'correct');
   const incorrectItems = finishedItems.filter(i => i.auditResult === 'incorrect');
+  const pendingItems = auditData.filter(i => i.auditResult === 'pending');
   const successRate = finishedItems.length > 0 ? Math.round((correctItems.length / finishedItems.length) * 100) : 0;
 
   return (
@@ -103,15 +122,15 @@ export const PredictionsAuditView: React.FC<PredictionsAuditViewProps> = ({ matc
             Auditoría de Modelos y Predicciones en Vivo
           </div>
           <h2 className="text-2xl sm:text-3xl font-black text-white">
-            Predicciones de Resultados & Verificación Honestos
+            Predicciones de Resultados & Verificación Honesta
           </h2>
           <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-2xl">
-            Evaluación transparente basada estrictamente en datos reales de partidos y modelos de Poisson/xG. Sin datos ficticios ni ocultamiento de errores.
+            Evaluación transparente basada estrictamente en datos reales. Los partidos pendientes se muestran claramente como "Por disputar" sin marcar 0-0 ficticios.
           </p>
         </div>
 
         {/* Global Stats Summary */}
-        <div className="grid grid-cols-3 gap-3 bg-slate-950/80 p-4 rounded-2xl border border-slate-800 text-center min-w-[280px]">
+        <div className="grid grid-cols-4 gap-3 bg-slate-950/80 p-4 rounded-2xl border border-slate-800 text-center min-w-[340px]">
           <div>
             <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Auditados</span>
             <span className="text-xl font-black text-white font-mono">{finishedItems.length}</span>
@@ -121,8 +140,12 @@ export const PredictionsAuditView: React.FC<PredictionsAuditViewProps> = ({ matc
             <span className="text-xl font-black text-emerald-400 font-mono">{correctItems.length}</span>
           </div>
           <div>
-            <span className="text-[10px] text-amber-400 uppercase tracking-wider block">% Efectividad</span>
-            <span className="text-xl font-black text-amber-400 font-mono">{successRate}%</span>
+            <span className="text-[10px] text-amber-400 uppercase tracking-wider block">Pendientes</span>
+            <span className="text-xl font-black text-amber-400 font-mono">{pendingItems.length}</span>
+          </div>
+          <div>
+            <span className="text-[10px] text-teal-400 uppercase tracking-wider block">% Efectividad</span>
+            <span className="text-xl font-black text-teal-400 font-mono">{successRate}%</span>
           </div>
         </div>
       </div>
@@ -135,14 +158,14 @@ export const PredictionsAuditView: React.FC<PredictionsAuditViewProps> = ({ matc
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Buscar equipo o competición..."
+              placeholder="Buscar equipo, país o estado (ej: pendientes)..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
             />
           </div>
 
-          {/* Competition Filter */}
+          {/* Competition Filter with Logo / Flag info */}
           <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
             <Trophy className="w-4 h-4 text-emerald-400 shrink-0" />
             <select
@@ -151,9 +174,16 @@ export const PredictionsAuditView: React.FC<PredictionsAuditViewProps> = ({ matc
               className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
             >
               <option value="all">Todas las Competiciones</option>
-              {competitions.map((comp, idx) => (
-                <option key={idx} value={comp}>{comp}</option>
-              ))}
+              {competitions.map((comp, idx) => {
+                const sampleMatch = matches.find(m => m.competition === comp);
+                const flag = sampleMatch?.competition_flag ? `${sampleMatch.competition_flag} ` : '';
+                const country = sampleMatch?.competition_country ? `(${sampleMatch.competition_country})` : '';
+                return (
+                  <option key={idx} value={comp}>
+                    {flag}{comp} {country}
+                  </option>
+                );
+              })}
             </select>
           </div>
 
@@ -170,9 +200,9 @@ export const PredictionsAuditView: React.FC<PredictionsAuditViewProps> = ({ matc
                 }`}
               >
                 {st === 'all' && 'Todos'}
-                {st === 'correct' && 'Aciertos ✅'}
-                {st === 'incorrect' && 'Fallos ❌'}
-                {st === 'pending' && 'Pendientes ⏳'}
+                {st === 'correct' && `Aciertos (${correctItems.length}) ✅`}
+                {st === 'incorrect' && `Fallos (${incorrectItems.length}) ❌`}
+                {st === 'pending' && `Pendientes (${pendingItems.length}) ⏳`}
               </button>
             ))}
           </div>
@@ -198,16 +228,31 @@ export const PredictionsAuditView: React.FC<PredictionsAuditViewProps> = ({ matc
                 className={`bg-slate-900 border rounded-3xl p-6 shadow-xl transition-all flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6 ${
                   item.auditResult === 'correct' ? 'border-emerald-500/40 bg-gradient-to-r from-slate-900 to-emerald-950/10' :
                   item.auditResult === 'incorrect' ? 'border-rose-500/40 bg-gradient-to-r from-slate-900 to-rose-950/10' :
-                  'border-slate-800'
+                  'border-amber-500/30 bg-gradient-to-r from-slate-900 to-amber-950/10'
                 }`}
               >
                 {/* Match Info & Score */}
                 <div className="space-y-3 flex-1">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="px-2.5 py-1 rounded-lg bg-slate-950 text-emerald-400 font-semibold border border-slate-800">
-                      {m.competition || 'Partido Oficial'}
+                    <div className="flex items-center gap-2">
+                      {m.competition_logo && (
+                        <img 
+                          src={m.competition_logo} 
+                          alt="" 
+                          className="w-5 h-5 object-contain rounded bg-white/5 p-0.5" 
+                        />
+                      )}
+                      <span className="px-2.5 py-1 rounded-lg bg-slate-950 text-emerald-400 font-semibold border border-slate-800 flex items-center gap-1.5">
+                        <span>{m.competition_flag || '⚽'}</span>
+                        <span>{m.competition || 'Partido Oficial'}</span>
+                        {m.competition_country && (
+                          <span className="text-[10px] text-slate-400 font-medium">({m.competition_country})</span>
+                        )}
+                      </span>
+                    </div>
+                    <span className="text-slate-400 font-mono text-xs">
+                      {m.local_time ? `🕒 ${m.local_time}` : m.date || 'Programado'}
                     </span>
-                    <span className="text-slate-400 font-mono">{m.local_time || m.date || 'Programado'}</span>
                   </div>
 
                   <div className="flex items-center justify-between bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80">
@@ -216,8 +261,19 @@ export const PredictionsAuditView: React.FC<PredictionsAuditViewProps> = ({ matc
                       <span className="font-bold text-white text-sm sm:text-base">{m.home_team}</span>
                     </div>
 
-                    <div className="px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-center font-mono font-black text-lg text-white">
-                      {item.isFinished ? `${m.home_score} - ${m.away_score}` : 'vs'}
+                    <div className="px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-center font-mono font-black text-lg text-white min-w-[120px]">
+                      {item.isFinished ? (
+                        <span>{m.home_score} - {m.away_score}</span>
+                      ) : (
+                        <div className="flex flex-col items-center">
+                          <span className="text-[10px] font-sans font-bold text-amber-400 uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30">
+                            Por Disputar
+                          </span>
+                          <span className="text-xs text-slate-400 font-mono mt-0.5">
+                            {m.local_time ? `🕒 ${m.local_time}` : 'vs'}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-3 flex-1 justify-end text-right">
@@ -237,9 +293,15 @@ export const PredictionsAuditView: React.FC<PredictionsAuditViewProps> = ({ matc
                     <Target className="w-4 h-4 text-emerald-400 shrink-0" />
                     <span>Favorito: {item.favored}</span>
                   </div>
-                  <div className="text-xs text-slate-400 flex justify-between font-mono">
-                    <span>Goles Est: {item.predictedScore}</span>
-                    <span>λ H:{item.probs.home_lambda} A:{item.probs.away_lambda}</span>
+                  <div className="text-xs text-slate-400 flex flex-col gap-1 font-mono">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Marcador Prob:</span>
+                      <span className="text-white font-bold">{item.predictedScore}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-slate-500">Expectativa (λ):</span>
+                      <span className="text-emerald-400">L:{item.probs.home_lambda} - V:{item.probs.away_lambda}</span>
+                    </div>
                   </div>
                 </div>
 

@@ -15,7 +15,8 @@ import {
   Menu,
   X,
   Layers,
-  CheckCircle2
+  CheckCircle2,
+  Flame
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -36,6 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const menuItems = [
     { id: 'inicio', label: 'Inicio', icon: LayoutDashboard },
     { id: 'hoy', label: 'Partidos de Hoy', icon: Calendar },
+    { id: 'top-ligas', label: 'Top Ligas & Predicciones', icon: Flame },
     { id: 'en-vivo', label: 'Marcadores en Vivo', icon: Radio },
     { id: 'clasificaciones', label: 'Competiciones y Tablas', icon: Trophy },
     { id: 'mejores-probabilidades', label: 'Mejores Probabilidades', icon: Target },

@@ -77,18 +77,34 @@ export function calculateAdvancedMarkets(
     under: l.under_prob ?? (100 - (l.over_prob ?? l.probability ?? 50))
   }));
 
-  // Team corners
+  // Team corners calculated strictly via Poisson cumulative distribution
   const homeExp = cornerProbs.home_expected_corners;
   const awayExp = cornerProbs.away_expected_corners;
-  const home_over_35 = homeExp > 3.5 ? 68.5 : 42.0;
-  const home_over_45 = homeExp > 4.5 ? 58.0 : 35.0;
-  const away_over_35 = awayExp > 3.5 ? 65.0 : 40.0;
-  const away_over_45 = awayExp > 4.5 ? 55.0 : 32.0;
 
-  // Cards estimation based on match intensity (lambda sum)
+  // Poisson CDF helper: P(X > k) = 1 - Sum_{i=0}^k (lambda^i * e^-lambda / i!)
+  const calculatePoissonOver = (lambda: number, line: number): number => {
+    if (!lambda || lambda <= 0) return 0;
+    let under = 0;
+    const maxK = Math.floor(line);
+    for (let i = 0; i <= maxK; i++) {
+      let fact = 1;
+      for (let f = 2; f <= i; f++) fact *= f;
+      under += (Math.pow(lambda, i) * Math.exp(-lambda)) / fact;
+    }
+    return Number((Math.max(0, Math.min(100, (1 - under) * 100))).toFixed(1));
+  };
+
+  const home_over_35 = cornerProbs.hasRealData ? calculatePoissonOver(homeExp, 3.5) : 0;
+  const home_over_45 = cornerProbs.hasRealData ? calculatePoissonOver(homeExp, 4.5) : 0;
+  const away_over_35 = cornerProbs.hasRealData ? calculatePoissonOver(awayExp, 3.5) : 0;
+  const away_over_45 = cornerProbs.hasRealData ? calculatePoissonOver(awayExp, 4.5) : 0;
+
+  // Cards model: only compute if there is sufficient data quality; use genuine Poisson expectation
   const totalLambda = matchProbs.home_lambda + matchProbs.away_lambda;
-  const over_15_cards = Number((Math.min(92, 50 + totalLambda * 12)).toFixed(1));
-  const over_25_cards = Number((Math.min(82, 35 + totalLambda * 10)).toFixed(1));
+  // Estimated match disciplinary intensity ~ 3.2 cards mean scaled with match competitiveness
+  const estimatedCardsLambda = matchProbs.hasSufficientData ? Math.max(1.5, Math.min(6.5, 1.8 + totalLambda * 0.7)) : 0;
+  const over_15_cards = estimatedCardsLambda > 0 ? calculatePoissonOver(estimatedCardsLambda, 1.5) : 0;
+  const over_25_cards = estimatedCardsLambda > 0 ? calculatePoissonOver(estimatedCardsLambda, 2.5) : 0;
 
   // Combos
   const one_x_and_over_15 = Number(((one_x / 100) * (over_15 / 100) * 100).toFixed(1));

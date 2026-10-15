@@ -40,8 +40,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
   setHomeTeam,
   setAwayTeam
 }) => {
-  const totalGoals = matches.reduce((sum, m) => sum + m.home_score + m.away_score, 0);
-  const avgGoals = matches.length > 0 ? (totalGoals / matches.length).toFixed(2) : '0.00';
+  const finishedMatches = matches.filter(m => m.home_score !== undefined && m.away_score !== undefined && m.status !== 'upcoming');
+  const totalGoals = finishedMatches.reduce((sum, m) => sum + (m.home_score ?? 0) + (m.away_score ?? 0), 0);
+  const avgGoals = finishedMatches.length > 0 ? (totalGoals / finishedMatches.length).toFixed(2) : '0.00';
   
   const matchesWithCorners = matches.filter(m => m.home_corners !== undefined && m.away_corners !== undefined);
   const totalCorners = matchesWithCorners.reduce((sum, m) => sum + (m.home_corners || 0) + (m.away_corners || 0), 0);

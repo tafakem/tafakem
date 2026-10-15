@@ -15,6 +15,7 @@ import { TeamsView } from './components/TeamsView';
 import { ImportView } from './components/ImportView';
 import { SettingsView } from './components/SettingsView';
 import { PredictionsAuditView } from './components/PredictionsAuditView';
+import { PopularCompetitionsView } from './components/PopularCompetitionsView';
 import { Match } from './types/football';
 import { INITIAL_MATCHES } from './data/defaultData';
 import { calculateTeamStats } from './utils/analytics';
@@ -22,10 +23,13 @@ import { calculateTeamStats } from './utils/analytics';
 export default function App() {
   const [activeSection, setActiveSection] = useState<string>('hoy');
   const [matches, setMatches] = useState<Match[]>(() => {
-    const saved = localStorage.getItem('tafakem_matches_lima_v1');
+    const saved = localStorage.getItem('tafakem_matches_lima_v2');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed.some(m => m.competition_logo)) {
+          return parsed;
+        }
       } catch (e) {
         return INITIAL_MATCHES;
       }
@@ -34,7 +38,7 @@ export default function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem('tafakem_matches_lima_v1', JSON.stringify(matches));
+    localStorage.setItem('tafakem_matches_lima_v2', JSON.stringify(matches));
   }, [matches]);
 
   // Extract unique teams
@@ -93,6 +97,14 @@ export default function App() {
               setAwayTeam={setAwayTeam}
               matches={matches}
               setMatches={setMatches}
+            />
+          )}
+          {activeSection === 'top-ligas' && (
+            <PopularCompetitionsView
+              matches={matches}
+              setActiveSection={setActiveSection}
+              setHomeTeam={setHomeTeam}
+              setAwayTeam={setAwayTeam}
             />
           )}
           {activeSection === 'en-vivo' && (

@@ -56,6 +56,11 @@ export function calculateTeamStats(matches: Match[]): TeamStats[] {
   const sortedMatches = [...matches].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   for (const m of sortedMatches) {
+    // Only process matches with final completed scores (not pending/upcoming)
+    if (m.home_score === undefined || m.away_score === undefined || m.status === 'upcoming') {
+      continue;
+    }
+
     const home = getOrCreateTeam(m.home_team);
     const away = getOrCreateTeam(m.away_team);
 
@@ -148,13 +153,14 @@ export function calculateMatchProbabilities(
   modelType: 'poisson' | 'dixon-coles' | 'monte-carlo' | 'ai-neural' = 'poisson'
 ): MatchProbabilityResult {
   const stats = calculateTeamStats(matches);
-  const totalMatches = matches.length || 1;
+  const finishedMatches = matches.filter(m => m.home_score !== undefined && m.away_score !== undefined && m.status !== 'upcoming');
+  const totalMatches = finishedMatches.length || 1;
 
   let totalHomeGoals = 0;
   let totalAwayGoals = 0;
-  matches.forEach(m => {
-    totalHomeGoals += m.home_score;
-    totalAwayGoals += m.away_score;
+  finishedMatches.forEach(m => {
+    totalHomeGoals += (m.home_score ?? 0);
+    totalAwayGoals += (m.away_score ?? 0);
   });
 
   const leagueAvgHomeGoals = totalHomeGoals / totalMatches;
@@ -227,19 +233,22 @@ export function calculateMatchProbabilities(
   let ou35_under = 0;
   let btts_no = 0;
 
+  // Dixon & Coles (1997) bivariate correction factor tau for low scoring combinations (0,0), (1,0), (0,1), (1,1)
+  const dixonColesTau = (x: number, y: number, lam: number, mu: number, rho: number = -0.11): number => {
+    if (x === 0 && y === 0) return Math.max(0, 1 - (lam * mu * rho));
+    if (x === 0 && y === 1) return Math.max(0, 1 + (lam * rho));
+    if (x === 1 && y === 0) return Math.max(0, 1 + (mu * rho));
+    if (x === 1 && y === 1) return Math.max(0, 1 - rho);
+    return 1.0;
+  };
+
   const maxGoals = 6;
   for (let h = 0; h <= maxGoals; h++) {
     for (let a = 0; a <= maxGoals; a++) {
-      let pHome = poissonProbability(homeLambda, h);
-      let pAway = poissonProbability(awayLambda, a);
-
-      if (modelType === 'dixon-coles') {
-        if (h === 0 && a === 0) pHome *= 0.95;
-        else if (h === 1 && a === 0) pHome *= 1.05;
-        else if (h === 0 && a === 1) pAway *= 1.05;
-      }
-
-      const pScore = pHome * pAway;
+      const pHome = poissonProbability(homeLambda, h);
+      const pAway = poissonProbability(awayLambda, a);
+      const tau = modelType === 'dixon-coles' ? dixonColesTau(h, a, homeLambda, awayLambda, -0.11) : 1.0;
+      const pScore = pHome * pAway * tau;
 
       if (h > a) homeWinProb += pScore;
       else if (h === a) drawProb += pScore;

@@ -159,18 +159,35 @@ export function convertApiFixtureToMatch(item: ApiFixtureItem): Match {
     minute: '2-digit'
   });
 
-  // STRICT AUDIT COMPLIANCE:
-  // Never fabricate pseudo-random corners or xG with Math.random().
-  // If official match statistics have not been explicitly fetched or recorded,
-  // leave undefined and mark data_source and flags accordingly.
+  // Country flag mapping helper
+  const countryFlagMap: { [c: string]: string } = {
+    'England': '🏴󠁧󠁢󠁥󠁮󠁧󠁿', 'Inglaterra': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+    'Spain': '🇪🇸', 'España': '🇪🇸',
+    'Italy': '🇮🇹', 'Italia': '🇮🇹',
+    'Brazil': '🇧🇷', 'Brasil': '🇧🇷',
+    'Germany': '🇩🇪', 'Alemania': '🇩🇪',
+    'France': '🇫🇷', 'Francia': '🇫🇷',
+    'Peru': '🇵🇪', 'Perú': '🇵🇪',
+    'Argentina': '🇦🇷', 'Portugal': '🇵🇹',
+    'Netherlands': '🇳🇱', 'USA': '🇺🇸',
+    'World': '🌎', 'Europe': '🏆'
+  };
+
+  const flagEmoji = countryFlagMap[item.league.country] || (item.league.flag ? '⚽' : '');
+
+  // For upcoming/pending matches, scores must remain undefined (NOT 0-0)
+  const isStartedOrFinished = status === 'finished' || status === 'live';
+  const homeScore = isStartedOrFinished && item.goals.home !== null ? item.goals.home : undefined;
+  const awayScore = isStartedOrFinished && item.goals.away !== null ? item.goals.away : undefined;
+
   return {
     id: `api-fix-${item.fixture.id}`,
     api_fixture_id: item.fixture.id,
     date: item.fixture.date.substring(0, 10),
     home_team: item.teams.home.name,
     away_team: item.teams.away.name,
-    home_score: item.goals.home ?? 0,
-    away_score: item.goals.away ?? 0,
+    home_score: homeScore,
+    away_score: awayScore,
     home_corners: undefined,
     away_corners: undefined,
     home_xg: undefined,
@@ -181,6 +198,7 @@ export function convertApiFixtureToMatch(item: ApiFixtureItem): Match {
     competition: item.league.name,
     competition_country: item.league.country,
     competition_logo: item.league.logo,
+    competition_flag: flagEmoji,
     home_logo: item.teams.home.logo,
     away_logo: item.teams.away.logo,
     status,
